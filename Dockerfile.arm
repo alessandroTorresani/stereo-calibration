@@ -1,0 +1,69 @@
+FROM ubuntu:18.04
+
+ARG CMAKE_INSTALL_PREFIX=/usr/local
+ARG NUM_THREADS=1
+
+RUN apt-get update -y && \
+    : "basic dependencies" && \
+    apt-get install -y --no-install-recommends \    
+        build-essential \
+        cmake \
+        wget \
+        tar \
+        unzip  && \
+    : "opencv dependencies" && \
+    apt-get install -y --no-install-recommends \
+        libgtk2.0-dev \
+        libeigen3-dev \
+        libjpeg-dev \
+        libpng++-dev \
+        libtiff-dev \
+        libopenexr-dev \
+        libwebp-dev \
+        ffmpeg \
+        libavcodec-dev \
+        libavformat-dev \
+        libavutil-dev \
+        libswscale-dev \
+        libavresample-dev && \
+    : "calibration-tool-dependencies" && \
+    apt-get install -y --no-install-recommends \
+        libpopt-dev && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# OpenCV
+WORKDIR /tmp
+ARG OPENCV_VERSION=4.1.0
+RUN wget -q https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.zip && \
+  unzip -q ${OPENCV_VERSION}.zip && \
+  rm -rf ${OPENCV_VERSION}.zip && \
+  cd opencv-${OPENCV_VERSION} && \
+  mkdir -p build && \
+  cd build && \
+  cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX} \
+    -DENABLE_NEON=ON \
+	  -DENABLE_VFPV3=ON \
+    -DBUILD_DOCS=OFF \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_JASPER=OFF \
+    -DBUILD_OPENEXR=OFF \
+    -DBUILD_PERF_TESTS=OFF \
+    -DBUILD_TESTS=OFF \
+    -DBUILD_opencv_apps=OFF \
+    -DBUILD_opencv_dnn=OFF \
+    -DBUILD_opencv_ml=OFF \
+    -DBUILD_opencv_python_bindings_generator=OFF \
+    -DENABLE_CXX11=ON \
+    -DENABLE_FAST_MATH=ON \
+    -DWITH_EIGEN=ON \
+    -DWITH_FFMPEG=ON \
+    -DWITH_OPENMP=ON \
+    .. && \
+  make -j${NUM_THREADS} && \
+  make install && \
+  cd /tmp && \
+  rm -rf *
+ENV OpenCV_DIR=${CMAKE_INSTALL_PREFIX}/lib/cmake/opencv4

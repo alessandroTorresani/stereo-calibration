@@ -29,3 +29,4 @@ Compiled Object files
 
 build/
 calib_imgs/
+.vscode/
