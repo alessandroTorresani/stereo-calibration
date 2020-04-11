@@ -14,4 +14,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 find_package(OpenCV REQUIRED)
 include_directories($(OpenCV_INCLUDE_DIRS))
 
+option(BUILD_EXPORT "Build export" OFF)
+
 add_subdirectory(src)

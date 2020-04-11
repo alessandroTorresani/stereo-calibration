@@ -7,8 +7,8 @@
 #include "utils.h"
 
 int main(int argc, char** argv){
-    if (argc < 7){
-        std::cerr << "Usage: ./stereoCamCalib calibL calibR imgFolderL imgFolderR extension outFilename";
+    if (argc < 6){
+        std::cerr << "Usage: ./stereoCamCalib calibL calibR imgFolderL imgFolderR extension";
         exit(1);
     }
     const std::string calibL = argv[1];
@@ -16,11 +16,9 @@ int main(int argc, char** argv){
     const std::string imgFolderL = argv[3];
     const std::string imgFolderR = argv[4];
     const std::string extension = argv[5];
-    const std::string outFilename = argv[6];
     std::cout << "Input arguments:\n\tCalibL: " << calibL
         << "\n\tCalibR: " << calibR << "\n\tImgFolderL size: " << imgFolderL 
-        << "\n\tImgFolderR: " << imgFolderR << "\n\tExtension: " << extension 
-        << "\n\tOutFilename: " << outFilename << "\n\n";
+        << "\n\tImgFolderR: " << imgFolderR << "\n\tExtension: " << extension << "\n\n";
     
     // Get chessboard info from the single camera calibrations. Check consistency.
     cv::FileStorage fsL(calibL, cv::FileStorage::READ);
@@ -43,17 +41,22 @@ int main(int argc, char** argv){
         exit(1);
     }
 
-    // Check that all the images have the same resolution and resLeft == resRight
-    cv::Size imgsResL, imgsResR;
-    if(!utils::checkImgsResolution(imgPathsL, imgsResL)){
+    /* Check that:
+        1)The images have the same resolution of the images used in the single cam calibrations
+        2)Left and right images resolution are equal
+    */ 
+    cv::Size imgResL, imgResR;
+    fsL["Img_res"] >> imgResL;
+    fsR["Img_res"] >> imgResR;
+    if(!utils::checkImgsResolution(imgPathsL, imgResL)){
         std::cerr << "Found inconsistencies in the resolution of the left images. Check your data\n";
         exit(1);
     }
-    if(!utils::checkImgsResolution(imgPathsR, imgsResR)){
+    if(!utils::checkImgsResolution(imgPathsR, imgResR)){
         std::cerr << "Found inconsistencies in the resolution of the right images. Check your data\n";
         exit(1);
     }
-    if (imgsResL != imgsResR){
+    if (imgResL != imgResR){
         std::cerr << "Left and right images must have the same resolution. \n";
         exit(1);
     }
@@ -102,20 +105,30 @@ int main(int argc, char** argv){
     fsL["D"] >> DL;
     fsR["K"] >> KR;
     fsR["D"] >> DR;
+    //--
     cv::Mat R, F, E;                                                    // Variables to be estimated
     cv::Vec3d T;
     int flag = 0;
     flag |= cv::CALIB_FIX_INTRINSIC;                                    // Fix the intrinsics (KL, KR, DL, DR) estimated in the single camera calibrations
+    //--
     cv::stereoCalibrate(objPts, imgPtsL, imgPtsR, KL, DL, KR, DR, 
-        imgsResL, R, T, E, F, flag);
+        imgResL, R, T, E, F, flag);
     
     // Write results
-    cv::FileStorage fsOut(outFilename, cv::FileStorage::WRITE);         
+    std::string serialL, serialR;
+    fsL["Serial"] >> serialL;
+    fsR["Serial"] >> serialR;
+    std::string fsOutName = "cam_stereo_" + serialL + "_to_" + serialR + ".yaml";
+    //--
+    cv::FileStorage fsOut(fsOutName, cv::FileStorage::WRITE);         
+    fsOut << "Serial_left" << serialL;
+    fsOut << "Serial_right" << serialR;
+    fsOut << "Img_res" << imgResL;
     fsOut << "R" << R;
     fsOut << "T" << T;
     fsOut << "E" << E;
     fsOut << "F" << F;
-    std::cout << "\tResults written to " << outFilename << "\n\n";
+    std::cout << "\tResults written to " << fsOutName << "\n\n";
 
     return 0;
 }

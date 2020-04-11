@@ -20,8 +20,8 @@ float computeRMSE(const std::vector<cv::Point3f> &objPoints, const std::vector<c
 }
 
 int main(int argc, char** argv){
-    if (argc < 6){
-        std::cerr << "Usage ./singleCamChessCalib boardWidth boardHeight cellSize imgFolder extension outFilename" << std::endl;
+    if (argc < 7){
+        std::cerr << "Usage ./singleCamChessCalib boardWidth boardHeight cellSize imgFolder extension camSerial" << std::endl;
         exit(1);
     }
     const int boardWidth = std::stoi(argv[1]);
@@ -29,21 +29,26 @@ int main(int argc, char** argv){
     const float cellSize = std::stof(argv[3]);
     const std::string imgFolder = argv[4];
     const std::string extension = argv[5];
-    const std::string outFilename = argv[6];
-    std::cout << "Input arguments:\n\tBoardWidth: " << boardWidth
-        << "\n\tBoardHeight: " << boardHeight << "\n\tCellSize: " << cellSize 
-        << "\n\tOutFilename: " << outFilename << "\n\n";
+    const std::string camSerial = argv[6];
+    std::cout << "Input arguments:\n\tboardWidth: " << boardWidth
+        << "\n\tboardHeight: " << boardHeight << "\n\tcellSize: " << cellSize 
+        << "\n\tcamSerial: " << camSerial << "\n\n";
 
     // Read the images
     std::cout << "Loading image filepaths\n";
     std::vector<std::string> imgPaths;
     utils::getImgPaths(imgFolder, extension, imgPaths);
     std::sort(imgPaths.begin(), imgPaths.end());
-    std::cout << "\tFound " << imgPaths.size() << " images\n\n";
+    if (imgPaths.size() > 0){
+        std::cout << "\tFound " << imgPaths.size() << " images\n\n";
+    } else {
+        std::cout << "\tNo images Found. Exiting\n\n";
+        exit(1);
+    }
 
     // Check that all the images have the same resolution
-    cv::Size imgsRes;
-    if(!utils::checkImgsResolution(imgPaths, imgsRes)){
+    const cv::Size imgRes = cv::imread(imgPaths[0], cv::IMREAD_COLOR).size();               // Read the resolution of the first image of the dataset
+    if(!utils::checkImgsResolution(imgPaths, imgRes)){
         std::cerr << "Found inconsistencies in the image resolutions. Check your data\n";
         exit(1);
     }
@@ -88,16 +93,19 @@ int main(int argc, char** argv){
     flag |= cv::CALIB_FIX_K4;
     flag |= cv::CALIB_FIX_K5;
     std::cout << "Starting calibration";
-    cv::calibrateCamera(objPoints, imgPoints, imgsRes, K, D, rVecs, tVecs, flag);
+    cv::calibrateCamera(objPoints, imgPoints, imgRes, K, D, rVecs, tVecs, flag);
     
     // Write calibration results
-    cv::FileStorage fsOut(outFilename, cv::FileStorage::WRITE);      
+    const std::string fsOutName = "cam_" + camSerial + ".yml";
+    cv::FileStorage fsOut(fsOutName, cv::FileStorage::WRITE);      
+    fsOut << "Serial" << camSerial;
+    fsOut << "Img_res" << imgRes;
     fsOut << "K" << K;
     fsOut << "D" << D;
-    fsOut << "BoardWidth" << boardWidth;
-    fsOut << "BoardHeight" << boardHeight;   
-    fsOut << "CellSize" << cellSize;
-    std::cout << "\n\tResults written to " << outFilename << "\n\n";
+    fsOut << "Board_width" << boardWidth;
+    fsOut << "Board_weight" << boardHeight;   
+    fsOut << "Cell_size" << cellSize;
+    std::cout << "\n\tResults written to " << fsOutName << "\n\n";
 
     // Compute calibration RMSE
     const uint nImgWithCorners = objPoints.size();

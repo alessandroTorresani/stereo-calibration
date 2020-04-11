@@ -18,18 +18,16 @@ namespace utils{
         }
     }
 
-    /** Check that all the images of the calibration dataset have the same resolution
+     /** Check that all the images in the path have the expected resolution
      * 
-     * @param imgPaths  Paths to the images
-     * @param res       Out resolution of the dataset, if tests succedes
+     * @param imgPaths      Paths to the images
+     * @param expectedRes   Expected resolution
     */ 
-    bool checkImgsResolution(const std::vector<std::string> &imgPaths, cv::Size &res){
-        cv::Size refRes = cv::imread(imgPaths[0], cv::IMREAD_COLOR).size();                 // Compare img resolution of the first image with all the other ones
-        for (uint i = 1; i < imgPaths.size(); i++){
-            if (cv::imread(imgPaths[i], cv::IMREAD_COLOR).size() != refRes)
+    bool checkImgsResolution(const std::vector<std::string> &imgPaths, const cv::Size &expectedRes){
+        for (uint i = 0; i < imgPaths.size(); i++){
+            if (cv::imread(imgPaths[i], cv::IMREAD_COLOR).size() != expectedRes)
                 return false;
         }
-        res = refRes;
         return true;
     }
 
@@ -65,12 +63,12 @@ namespace utils{
         int boardWidthL, boardWidthR, boardHeightL, boardHeightR;
         float cellSizeL, cellSizeR;
 
-        fsL["BoardWidth"] >> boardWidthL;
-        fsL["BoardHeight"] >> boardHeightL;
-        fsL["CellSize"] >> cellSizeL;
-        fsR["BoardWidth"] >> boardWidthR;
-        fsR["BoardHeight"] >> boardHeightR;
-        fsR["CellSize"] >> cellSizeR;
+        fsL["Board_width"] >> boardWidthL;
+        fsL["Board_weight"] >> boardHeightL;
+        fsL["Cell_size"] >> cellSizeL;
+        fsR["Board_width"] >> boardWidthR;
+        fsR["Board_weight"] >> boardHeightR;
+        fsR["Cell_size"] >> cellSizeR;
 
         if ((boardWidthL == boardWidthR) && (boardHeightL == boardHeightR) && (cellSizeL == cellSizeR)){
             boardWidth = boardWidthL;
