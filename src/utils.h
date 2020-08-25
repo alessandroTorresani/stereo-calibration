@@ -1,33 +1,53 @@
+#pragma once
+
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
+
 #include <vector>
 #include <string>
 #include <experimental/filesystem>
-#include <opencv2/core/core.hpp>
 namespace fs = std::experimental::filesystem;
 
-namespace utils{
-    /** Return all the images with the given extension
+namespace utils {
+
+    /** Return the global filepaths of the images having the given extension
      * @param path          Source path
      * @param extension     Image extension
-     * @param out           Output vector of image filepaths
+     * @param sort          Sort the filepaths alphabetically
     */ 
-    void getImgPaths(const std::string path, const std::string extension, std::vector<std::string>& out){
+    std::vector<std::string> getImgPaths(const std::string path, const std::string extension, const bool sort=true) {
+        std::vector<std::string> imgPaths;
+        
+        // Get path of files matching the given extension
         for (const auto & entry : fs::directory_iterator(path)){
             std::string filetype = entry.path().extension().u8string();
             if (filetype.size() > 0 && filetype.substr(1) == extension)                 // i.e. ".png" ---->  "png"
-            out.emplace_back(entry.path().u8string());
+            imgPaths.emplace_back(entry.path().u8string());
         }
+
+        // Sort them alphabetically
+        if (sort)
+            std::sort(imgPaths.begin(), imgPaths.end());
+        
+        return imgPaths;
     }
 
      /** Check that all the images in the path have the expected resolution
      * 
      * @param imgPaths      Paths to the images
-     * @param expectedRes   Expected resolution
+     * @param imgRes        Detected resolution of the images (output)
     */ 
-    bool checkImgsResolution(const std::vector<std::string> &imgPaths, const cv::Size &expectedRes){
+    bool checkImgsResolution(const std::vector<std::string> &imgPaths, cv::Size &imgRes){
+        const cv::Size expectedRes = cv::imread(imgPaths[0], cv::IMREAD_COLOR).size();
+        
         for (uint i = 0; i < imgPaths.size(); i++){
             if (cv::imread(imgPaths[i], cv::IMREAD_COLOR).size() != expectedRes)
                 return false;
         }
+
+        imgRes = expectedRes;
         return true;
     }
 
@@ -44,10 +64,26 @@ namespace utils{
         if (found){
             cv::cornerSubPix(imgGray, chessCorners, cv::Size(5,5), cv::Size(-1,-1),                                                     
                             cv::TermCriteria(cv::TermCriteria::Type::EPS | 
-                            cv::TermCriteria::Type::MAX_ITER, 500, 0.1));
+                            cv::TermCriteria::Type::MAX_ITER, 30, 0.001));
         }
+
         return found;
     } 
+
+    /** Save image with chessboard corners
+     * @param filepath      File output path
+     * @param img           Input image
+     * @param boardSize     Width and height of the chessboard
+     * @param chessCorners  Chess corners
+     */
+    void saveChessCornersAsImg(const std::string& filepath, cv::Mat& img, const cv::Size &boardSize, std::vector<cv::Point2f> &chessCorners)
+    {   
+        // Create new image to avoid editing img
+        cv::Mat chessImg = img.clone();
+
+        cv::drawChessboardCorners(chessImg, boardSize, chessCorners, true);
+        cv::imwrite(filepath, chessImg);
+    }
 
     /** Load chessboard data (width, height, cell size) from left and right calibration files. Check their consistency.
      * Return false if consistencies are found
@@ -79,4 +115,5 @@ namespace utils{
             return false;
         }
     }
-}
+    
+} // namespace util

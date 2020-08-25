@@ -3,6 +3,7 @@ FROM ubuntu:18.04
 ARG CMAKE_INSTALL_PREFIX=/usr/local
 ARG NUM_THREADS=1
 
+# Install dependencies
 RUN apt-get update -y && \
     : "basic dependencies" && \
     apt-get install -y --no-install-recommends \    
@@ -32,6 +33,7 @@ RUN apt-get update -y && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
+# OpenCV
 WORKDIR /tmp
 ARG OPENCV_VERSION=4.1.0
 RUN wget --no-check-certificate https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.zip && \
@@ -64,3 +66,23 @@ RUN wget --no-check-certificate https://github.com/opencv/opencv/archive/${OPENC
   cd /tmp && \
   rm -rf *
 ENV OpenCV_DIR=${CMAKE_INSTALL_PREFIX}/lib/cmake/opencv4
+
+# Copy source files
+COPY . /calibration
+WORKDIR /calibration
+
+# Compile
+RUN mkdir build && \
+  cd build && \
+  cmake -BUILD_EXPORT=ON .. && \
+  make -j${NUM_THREADS} && \
+  cd .. && \
+  rm -r build
+
+# Associate git commit as argument
+ARG GIT_COMMIT=unspecified
+ENV git_commit=$GIT_COMMIT
+
+WORKDIR /calibration/bin
+CMD ["/bin/bash"]
+

@@ -1,6 +1,13 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/core/core.hpp>
+
 #include <iostream>
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+
+// Global variables
+const std::string logFolder = "./logStereoRectify";           // Script output will be stored in this directory
+
 
 int main(int argc, char** argv){
     if (argc < 4){
@@ -11,10 +18,10 @@ int main(int argc, char** argv){
     cv::Mat KL,KR,DL,DR,R;
     cv::FileStorage fsL(argv[1], cv::FileStorage::READ);
     cv::FileStorage fsR(argv[2], cv::FileStorage::READ);
-    cv::FileStorage fsRT(argv[3], cv::FileStorage::READ);
+    cv::FileStorage fsS(argv[3], cv::FileStorage::READ);
 
     cv::Size imgRes;
-    fsRT["Img_res"] >> imgRes;
+    fsS["Img_res"] >> imgRes;
     std::cout << imgRes << std::endl;
  
     // Read calibration of the single cameras
@@ -24,8 +31,11 @@ int main(int argc, char** argv){
     fsR["D"] >> DR;
 
     // Read R and T between the left and right cameras
-    fsRT["R"] >> R;
-    fsRT["T"] >> T;
+    fsS["R"] >> R;
+    fsS["T"] >> T;
+
+    // Create log folders
+    fs::create_directory(logFolder);
 
     // Compute P1, P2, R1, R2 and Q with stereoRectification
     cv::Mat RL, RR, PL, PR, Q;
@@ -34,9 +44,9 @@ int main(int argc, char** argv){
 
     // Write results
     std::string serialL, serialR;
-    fsRT["Serial_left"] >> serialL;
-    fsRT["Serial_right"] >> serialR;
-    const std::string fsOutName = "cam_rectify_" + serialL + "_to_" + serialR + ".yml";
+    fsS["Serial_left"] >> serialL;
+    fsS["Serial_right"] >> serialR;
+    const std::string fsOutName = logFolder + "/rectify_" + serialL + "_to_" + serialR + ".yml";
     //--
     cv::FileStorage fsOut(fsOutName, cv::FileStorage::WRITE);
     fsOut << "R1" << RL;

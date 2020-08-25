@@ -1,28 +1,26 @@
-#include <iostream>
-#include <experimental/filesystem>
+#include "utils.h"
+
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
-#include "utils.h"
 
-float computeRMSE(const std::vector<cv::Point3f> &objPoints, const std::vector<cv::Point2f> &imgPoints,
-        const cv::Mat &rvec, const cv::Mat &tvec, const cv::Mat &K , const cv::Mat &D) {  
-    // Project object points
-    std::vector<cv::Point2f> projObj;
-    cv::projectPoints(objPoints, rvec, tvec, K, D, projObj);
-    
-    //Compute RMSE
-    float projErr = std::pow(cv::norm(imgPoints, projObj, cv::NORM_L2), 2);
-    float RMSE = std::sqrt((projErr) / objPoints.size());
+#include <iostream>
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 
-    return RMSE; 
-}
 
-int main(int argc, char** argv){
-    if (argc < 7){
-        std::cerr << "Usage ./singleCamChessCalib boardWidth boardHeight cellSize imgFolder extension camSerial" << std::endl;
-        exit(1);
+// Global variables
+const std::string logFolder = "./logSingleCamCalib";           // Script output will be stored in this directory
+
+
+int main(int argc, char** argv) 
+{
+    if (argc < 7) 
+    {
+        std::cerr << "Usage ./singleCamChessCalib boardWidth boardHeight cellSize " 
+            "imgFolder extension camSerial" << std::endl;
+        return 1;
     }
     const int boardWidth = std::stoi(argv[1]);
     const int boardHeight = std::stoi(argv[2]);
@@ -32,89 +30,132 @@ int main(int argc, char** argv){
     const std::string camSerial = argv[6];
     std::cout << "Input arguments:\n\tboardWidth: " << boardWidth
         << "\n\tboardHeight: " << boardHeight << "\n\tcellSize: " << cellSize 
-        << "\n\tcamSerial: " << camSerial << "\n\n";
+        << "\n\tcamSerial: " << camSerial << "\n";
 
-    // Read the images
+    // Prepare file manager (cv::Filestorage)
+    cv::FileStorage fs;
+
+    // Load the filepaths of the images
     std::cout << "Loading image filepaths\n";
-    std::vector<std::string> imgPaths;
-    utils::getImgPaths(imgFolder, extension, imgPaths);
-    std::sort(imgPaths.begin(), imgPaths.end());
-    if (imgPaths.size() > 0){
-        std::cout << "\tFound " << imgPaths.size() << " images\n\n";
-    } else {
-        std::cout << "\tNo images Found. Exiting\n\n";
-        exit(1);
+    const std::vector<std::string> imgPaths = utils::getImgPaths(imgFolder, extension);
+    if (imgPaths.size() > 0)
+    {   
+        std::cout << "\tFound " << imgPaths.size() << " images\n";
+    } 
+    else 
+    {
+        std::cout << "\tNo images Found. Exiting\n";
+        return 1;
     }
 
-    // Check that all the images have the same resolution
-    const cv::Size imgRes = cv::imread(imgPaths[0], cv::IMREAD_COLOR).size();               // Read the resolution of the first image of the dataset
-    if(!utils::checkImgsResolution(imgPaths, imgRes)){
+    // Check that all the images have the same resolution   
+    cv::Size imgResolution;       
+    if(!utils::checkImgsResolution(imgPaths, imgResolution)) {
         std::cerr << "Found inconsistencies in the image resolutions. Check your data\n";
         exit(1);
     }
 
-    // Prepare calibration
-    std::vector<std::vector<cv::Point2f>> imgPoints;        // It contains all the chess corners foreach image
-    std::vector<std::vector<cv::Point3f>> objPoints;        // It contains all the 3D object points foreach image
+    // Create log folders
+    fs::create_directory(logFolder);
+    fs::create_directory(logFolder + "/" + camSerial);
+
+
+    /* 
+    FIND CHESSBOARD CORNERS AND CREATE ASSOCIATED 3D POINTS
+    */
     std::cout << "Looking for chess corners\n";
-    for (uint i=0; i<imgPaths.size(); i++){
-        // Convert image to grayscale
+    std::vector<std::vector<cv::Point2f>> chessCorners2D;                   // Detected chess corners foreach image
+    std::vector<std::vector<cv::Point3f>> chessCorners3D;                   // Associated 3D points foreach corner foreach image
+    //
+    for (uint i=0; i<imgPaths.size(); i++) 
+    {
         cv::Mat img, imgGray;
         img = cv::imread(imgPaths[i], cv::IMREAD_COLOR);       
         cv::cvtColor(img, imgGray, cv::COLOR_BGR2GRAY);
 
         // Look for chess corners
         std::vector<cv::Point2f> chessCorners;
-        bool found = utils::findChessCorners(imgGray, boardWidth, boardHeight, chessCorners);
-        std::cout << "\t" << imgPaths[i] << ":";
-        if (found){
-            std::cout << " Found\n";
-        } else {
-            std::cout << " Not found\n";
+        const bool found = utils::findChessCorners(imgGray, boardWidth, boardHeight, chessCorners);
+        if (found) 
+        {                                                
+            std::cout << "\t" << imgPaths[i] << ": Found\n";
+            
+            // Save chessboard corners coordinates
+            fs.open(logFolder + "/" + camSerial + "/chessCorners.yml", cv::FileStorage::APPEND);               
+            fs << "image_" + std::to_string(i) << chessCorners; 
+            fs.release();
+
+            // Save chessboard corners as image
+            utils::saveChessCornersAsImg(logFolder + "/" + camSerial + "/" + std::to_string(i) + ".jpeg", 
+                                    img, cv::Size(boardWidth, boardHeight), chessCorners);
+
+            chessCorners2D.emplace_back(chessCorners);
+        }
+        else 
+        {                                                      
+            std::cout << "\t" << imgPaths[i] << ": Not found\n";
             continue;
         }
-        imgPoints.emplace_back(chessCorners);
-
-        // Set up 3D object points starting from the top-left corner of the chessboard
+        
+        // Set up the 3D points starting from the top-left corner of the chessboard. 
+        // Use cellSize to scale them. Assume they are on a plane (z=0)
         std::vector<cv::Point3f> chessObjPoints;
-        for (int i = 0; i < boardHeight; i++){
-            for (int j = 0; j < boardWidth; j++){
+        for (int i = 0; i < boardHeight; i++)
+        {
+            for (int j = 0; j < boardWidth; j++)
+            {
                 chessObjPoints.emplace_back(cv::Point3f((float)j * cellSize, (float)i * cellSize, 0));
             }
         }
-        objPoints.emplace_back(chessObjPoints);
+        chessCorners3D.emplace_back(chessObjPoints);
     }
-    std::cout << "\n";
 
-    // Start calibration
-    cv::Mat K, D;                                   // Camera matrix and distortion vector
-    std::vector<cv::Mat> rVecs, tVecs;              // Rotation and translation of each camera   
-    int flag = 0;                                   // Ignore K4 and K5
+
+    /* 
+    START CALIBRATION
+    */
+    cv::Mat K, D;                                               // Camera matrix and distortion vector
+    std::vector<cv::Mat> rVecs, tVecs;                          // Rotation and translation of each camera   
+    std::vector<double> intrinsicStd, extrinsicStd;             // Standard deviation of intrinsic and extrinsic params
+    std::vector<double> perViewReprErr;                         // Per-view reprojection error of the corners
+    int flag = 0;                                               // Ignore K4 and K5
     flag |= cv::CALIB_FIX_K4;
     flag |= cv::CALIB_FIX_K5;
-    std::cout << "Starting calibration";
-    cv::calibrateCamera(objPoints, imgPoints, imgRes, K, D, rVecs, tVecs, flag);
-    
-    // Write calibration results
-    const std::string fsOutName = "cam_" + camSerial + ".yml";
-    cv::FileStorage fsOut(fsOutName, cv::FileStorage::WRITE);      
-    fsOut << "Serial" << camSerial;
-    fsOut << "Img_res" << imgRes;
-    fsOut << "K" << K;
-    fsOut << "D" << D;
-    fsOut << "Board_width" << boardWidth;
-    fsOut << "Board_weight" << boardHeight;   
-    fsOut << "Cell_size" << cellSize;
-    std::cout << "\n\tResults written to " << fsOutName << "\n\n";
+    cv::TermCriteria termCrit(cv::TermCriteria::Type::EPS |     // Termination criteria
+                    cv::TermCriteria::Type::MAX_ITER, 
+                    30, 0.001);
+    std::cout << "Calibrating";
+    const double reprError = cv::calibrateCamera(
+                            chessCorners3D, 
+                            chessCorners2D, imgResolution,
+                            K, D, rVecs, tVecs, 
+                            intrinsicStd, extrinsicStd,
+                            perViewReprErr, flag, termCrit);
+    std::cout << "\n\tOverall reprojection error: " << reprError << "\n";
 
-    // Compute calibration RMSE
-    const uint nImgWithCorners = objPoints.size();
-    float totErr = 0;
-    std::cout << "Computing calibration RMSE of the images with corners";
-    for (uint i=0; i<nImgWithCorners; i++){
-        float err = computeRMSE(objPoints[i], imgPoints[i], rVecs[i], tVecs[i], K, D);
-        std::cout << "\n\t" << i << "-th image RMSE: " << err;
-        totErr += err;
-    }
-    std::cout << "\n\tMean RMSE: " << totErr / (float) nImgWithCorners << "\n";
+    // Write calibration results
+    const std::string calFilename = logFolder + "/calib_" + camSerial + ".yml";                  
+    fs.open(calFilename, cv::FileStorage::WRITE);      
+    fs << "Serial" << camSerial;
+    fs << "Img_res" << imgResolution;
+    fs << "K" << K;
+    fs << "D" << D;
+    fs << "Board_width" << boardWidth;
+    fs << "Board_weight" << boardHeight;   
+    fs << "Cell_size" << cellSize;
+    fs.release();
+    std::cout << "\tCalibration written to " << calFilename << "\n";
+
+    // Write calibration info
+    const std::string calInfoFilename = logFolder + "/info_" + camSerial + ".yml";
+    fs.open(calInfoFilename, cv::FileStorage::WRITE);
+    fs << "rVecs" << rVecs;
+    fs << "tVecs" << tVecs;
+    fs << "intrStd" << intrinsicStd;
+    fs << "extrStd" << extrinsicStd;
+    fs << "perViewReprErr" << perViewReprErr;
+    fs.release();
+    std::cout << "\tCalibration statistics written to " << calInfoFilename << "\n";
+
+    return 0;
 }
